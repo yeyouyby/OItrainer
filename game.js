@@ -1040,6 +1040,125 @@ function checkAllQuitAndTriggerBadEnding(){
   }catch(e){ console.error('checkAllQuitAndTriggerBadEnding error', e); }
 }
 
+function __normalizeAliasSet(value){
+  if(value instanceof Set){
+    return new Set(Array.from(value));
+  }
+  if(Array.isArray(value)){
+    return new Set(value);
+  }
+  if(value && typeof value === 'object'){
+    try{
+      return new Set(Object.keys(value).filter(k => value[k]));
+    }catch(e){ return new Set(); }
+  }
+  return new Set();
+}
+
+function renameStudent(idx, newName){
+  if(!game || !Array.isArray(game.students)){
+    return { success: false, reason: 'invalid_state' };
+  }
+  const student = game.students[idx];
+  if(!student){
+    return { success: false, reason: 'not_found' };
+  }
+
+  const trimmed = String(newName || '').trim();
+  if(trimmed.length === 0){
+    return { success: false, reason: 'empty' };
+  }
+
+  const oldName = student.name || '';
+  if(trimmed === oldName){
+    return { success: true, changed: false, oldName, newName: trimmed };
+  }
+
+  const duplicate = game.students.some((s, i) => i !== idx && s && s.name === trimmed);
+  if(duplicate){
+    return { success: false, reason: 'duplicate' };
+  }
+
+  try{
+    if(!(student.aliases instanceof Set)){
+      student.aliases = __normalizeAliasSet(student.aliases);
+    }
+    student.aliases.add(oldName);
+    if(student.originalName && typeof student.originalName === 'string'){
+      student.aliases.add(student.originalName);
+    } else {
+      student.originalName = oldName;
+    }
+  }catch(e){ console.error('renameStudent alias sync failed', e); }
+
+  student.name = trimmed;
+
+  try{
+    const qualification = game.qualification;
+    if(qualification){
+      const seasons = Array.isArray(qualification) ? qualification : Object.values(qualification);
+      seasons.forEach(season => {
+        if(!season) return;
+        if(season instanceof Map){
+          season.forEach(set => {
+            if(set && typeof set.delete === 'function' && typeof set.add === 'function' && set.has(oldName)){
+              set.delete(oldName);
+              set.add(trimmed);
+            }
+          });
+        } else if(typeof season === 'object'){
+          Object.keys(season).forEach(key => {
+            const set = season[key];
+            if(set && typeof set.delete === 'function' && typeof set.add === 'function'){
+              if(set.has(oldName)){
+                set.delete(oldName);
+                set.add(trimmed);
+              }
+            } else if(Array.isArray(set)){
+              const idx = set.indexOf(oldName);
+              if(idx >= 0){
+                set[idx] = trimmed;
+              }
+            }
+          });
+        }
+      });
+    }
+  }catch(e){ console.error('renameStudent qualification sync failed', e); }
+
+  try{
+    if(game.nationalTeamResults){
+      const results = game.nationalTeamResults;
+      if(Array.isArray(results.ioiQualified)){
+        results.ioiQualified = results.ioiQualified.map(name => name === oldName ? trimmed : name);
+      }
+      if(results.totalScores && Object.prototype.hasOwnProperty.call(results.totalScores, oldName)){
+        const val = results.totalScores[oldName];
+        delete results.totalScores[oldName];
+        results.totalScores[trimmed] = val;
+      }
+      if(Array.isArray(results.cttScores)){
+        results.cttScores.forEach(entry => {
+          if(entry && entry.studentName === oldName){ entry.studentName = trimmed; }
+        });
+      }
+      if(Array.isArray(results.ctsScores)){
+        results.ctsScores.forEach(entry => {
+          if(entry && entry.studentName === oldName){ entry.studentName = trimmed; }
+        });
+      }
+    }
+  }catch(e){ console.error('renameStudent national team sync failed', e); }
+
+  return { success: true, changed: true, oldName, newName: trimmed };
+}
+
+if(typeof window !== 'undefined'){
+  window.renameStudent = renameStudent;
+} else if(typeof globalThis !== 'undefined'){
+  globalThis.renameStudent = renameStudent;
+}
+
 function evictSingle(idx){
   const student = game.students[idx];
   if(!student || student.active === false) return;
@@ -1216,15 +1335,61 @@ function loadGame(){ try{
     } else if(s.talents && typeof s.talents === 'object'){
       student.talents = new Set(Object.keys(s.talents).filter(k => s.talents[k]));
     }
+    if(s.aliases){
+      if(s.aliases instanceof Set){
+        student.aliases = new Set(Array.from(s.aliases));
+      } else if(Array.isArray(s.aliases)){
+        student.aliases = new Set(s.aliases);
+      } else if(typeof s.aliases === 'object'){
+        try{
+          student.aliases = new Set(Object.keys(s.aliases).filter(k => s.aliases[k]));
+        }catch(e){ student.aliases = new Set(); }
+      }
+    } else {
+      student.aliases = new Set();
+    }
     return student;
   });
   renderAll(); alert("已载入存档"); }catch(e){ alert("载入失败："+e); } }
 
-function silentLoad(){ try{ 
-  let raw = null;
-  try{ raw = sessionStorage.getItem('oi_coach_save'); }catch(e){ raw = null; }
-  try{ if(!raw) raw = localStorage.getItem('oi_coach_save'); }catch(e){}
-  if(!raw) return false; let o = JSON.parse(raw); game = Object.assign(new GameState(), o); window.game = game; game.facilities = Object.assign(new Facilities(), o.facilities); game.students = (o.students || []).map(s => { const student = Object.assign(new Student(), s); if(s.talents && Array.isArray(s.talents)){ student.talents = new Set(s.talents); } else if(s.talents && typeof s.talents === 'object'){ student.talents = new Set(Object.keys(s.talents).filter(k => s.talents[k])); } return student; }); return true; }catch(e){ return false; } }
+function silentLoad(){
+  try{
+    let raw = null;
+    try{ raw = sessionStorage.getItem('oi_coach_save'); }catch(e){ raw = null; }
+    try{ if(!raw) raw = localStorage.getItem('oi_coach_save'); }catch(e){}
+    if(!raw) return false;
+
+    let o = JSON.parse(raw);
+    game = Object.assign(new GameState(), o);
+    window.game = game;
+    game.facilities = Object.assign(new Facilities(), o.facilities);
+    game.students = (o.students || []).map(s => {
+      const student = Object.assign(new Student(), s);
+      if(s.talents && Array.isArray(s.talents)){
+        student.talents = new Set(s.talents);
+      } else if(s.talents && typeof s.talents === 'object'){
+        student.talents = new Set(Object.keys(s.talents).filter(k => s.talents[k]));
+      }
+      if(s.aliases){
+        if(s.aliases instanceof Set){
+          student.aliases = new Set(Array.from(s.aliases));
+        } else if(Array.isArray(s.aliases)){
+          student.aliases = new Set(s.aliases);
+        } else if(typeof s.aliases === 'object'){
+          try{
+            student.aliases = new Set(Object.keys(s.aliases).filter(k => s.aliases[k]));
+          }catch(e){ student.aliases = new Set(); }
+        }
+      } else {
+        student.aliases = new Set();
+      }
+      return student;
+    });
+    return true;
+  }catch(e){
+    return false;
+  }
+}
 
 function startFromStartPage(){
   let diff = parseInt(document.getElementById('start-diff').value);
