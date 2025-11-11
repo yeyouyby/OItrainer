@@ -101,6 +101,86 @@ const QUOTES = [
 /* =========== UI 辅助 =========== */
 const $ = id => document.getElementById(id);
 
+const htmlEscape = (value) => {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+};
+
+const eventFeed = (function(){
+  try{
+    if(typeof window !== 'undefined' && window.eventFeed){ return window.eventFeed; }
+  }catch(e){ /* ignore */ }
+  try{
+    const feed = new EventFeed();
+    if(typeof window !== 'undefined'){ window.eventFeed = feed; }
+    return feed;
+  }catch(e){ return null; }
+})();
+
+const STUDENT_FIELD_CONFIG = {
+  thinking: { label: '思维', min: 0, max: 600, step: 1, category: 'ability' },
+  coding: { label: '编程', min: 0, max: 600, step: 1, category: 'ability' },
+  mental: { label: '心理', min: 0, max: 150, step: 0.5, category: 'ability' },
+  knowledge_ds: { label: '数据结构', min: 0, max: 500, step: 1, category: 'knowledge' },
+  knowledge_graph: { label: '图论', min: 0, max: 500, step: 1, category: 'knowledge' },
+  knowledge_string: { label: '字符串', min: 0, max: 500, step: 1, category: 'knowledge' },
+  knowledge_math: { label: '数学', min: 0, max: 500, step: 1, category: 'knowledge' },
+  knowledge_dp: { label: 'DP', min: 0, max: 500, step: 1, category: 'knowledge' },
+  pressure: { label: '压力', min: 0, max: 120, step: 1, category: 'status' }
+};
+
+const STUDENT_FIELD_GROUPS = [
+  { key: 'ability', title: '基础能力' },
+  { key: 'knowledge', title: '知识掌握' },
+  { key: 'status', title: '状态参数' }
+];
+
+const formatStatValue = (value) => {
+  if(typeof value !== 'number' || !isFinite(value)) return String(value ?? '');
+  if(Math.abs(value - Math.round(value)) < 0.01) return String(Math.round(value));
+  return value.toFixed(1);
+};
+
+const clampValue = (val, min, max) => {
+  if(typeof clamp === 'function') return clamp(val, min, max);
+  if(val < min) return min;
+  if(val > max) return max;
+  return val;
+};
+
+const toNumberOr = (raw, fallback) => {
+  if(raw === '' || raw === null || typeof raw === 'undefined') return fallback;
+  const num = Number(raw);
+  return Number.isFinite(num) ? num : fallback;
+};
+
+const getStudentAliasList = (student) => {
+  const aliases = new Set();
+  if(!student) return [];
+  const add = (name) => {
+    if(!name) return;
+    const trimmed = String(name).trim();
+    if(trimmed && trimmed !== student.name){
+      aliases.add(trimmed);
+    }
+  };
+  if(student.originalName) add(student.originalName);
+  if(student.aliases instanceof Set){
+    student.aliases.forEach(add);
+  } else if(Array.isArray(student.aliases)){
+    student.aliases.forEach(add);
+  } else if(student.aliases && typeof student.aliases === 'object'){
+    Object.keys(student.aliases).forEach(key => {
+      if(student.aliases[key]) add(key);
+    });
+  }
+  return Array.from(aliases);
+};
+
 function log(msg){
   const el = $('log');
   const wk = currWeek();
@@ -134,14 +214,192 @@ function safeRenderAll(){
   }catch(e){ console.error('safeRenderAll error', e); }
 }
 
+function mapRenameError(reason){
+  switch(reason){
+    case 'empty': return '姓名不能为空';
+    case 'duplicate': return '已有同名学生，请使用不同的名字';
+    case 'invalid_state': return '当前无法修改姓名';
+    case 'not_found': return '未找到对应的学生';
+    default: return '姓名修改失败，请稍后重试';
+  }
+}
+
+function collectStudentEdits(student, modal){
+  const updates = {};
+  if(!student || !modal) return updates;
+  const nameInput = modal.querySelector('#student-edit-name');
+  updates.name = nameInput ? nameInput.value : student.name;
+
+  Object.keys(STUDENT_FIELD_CONFIG).forEach(key => {
+    const cfg = STUDENT_FIELD_CONFIG[key];
+    if(!cfg) return;
+    const input = modal.querySelector(`#student-edit-${key}`);
+    const fallback = Number(student[key] ?? 0);
+    updates[key] = input ? toNumberOr(input.value, fallback) : fallback;
+  });
+  return updates;
+}
+
+function applyStudentEdits(idx, updates, hooks){
+  if(!game || !Array.isArray(game.students)) return false;
+  const student = game.students[idx];
+  if(!student) return false;
+
+  const beforeSnapshot = { name: student.name };
+  Object.keys(STUDENT_FIELD_CONFIG).forEach(key => {
+    beforeSnapshot[key] = Number(student[key] ?? 0);
+  });
+
+  const desiredName = typeof updates.name === 'string' ? updates.name.trim() : student.name;
+  let renameResult = { success: true, changed: false, oldName: student.name, newName: student.name };
+
+  if(desiredName && desiredName !== student.name){
+    if(typeof window.renameStudent === 'function'){
+      renameResult = window.renameStudent(idx, desiredName);
+      if(!renameResult.success){
+        if(hooks && typeof hooks.onRenameError === 'function'){
+          hooks.onRenameError(renameResult.reason);
+        } else {
+          alert(mapRenameError(renameResult.reason));
+        }
+        return false;
+      }
+    } else {
+      const oldName = student.name;
+      student.name = desiredName;
+      renameResult = { success: true, changed: true, oldName, newName: desiredName };
+    }
+  }
+
+  const changes = [];
+  if(renameResult.changed){
+    changes.push(`姓名 ${renameResult.oldName} → ${renameResult.newName}`);
+  }
+
+  Object.keys(STUDENT_FIELD_CONFIG).forEach(key => {
+    const cfg = STUDENT_FIELD_CONFIG[key];
+    if(!cfg) return;
+    const raw = updates[key];
+    if(typeof raw !== 'number' || Number.isNaN(raw)) return;
+    const clamped = clampValue(raw, cfg.min, cfg.max);
+    const normalized = cfg.step < 1 ? Number(clamped.toFixed(1)) : Number(clamped.toFixed(0));
+    const beforeVal = Number(beforeSnapshot[key]);
+    if(Math.abs(normalized - beforeVal) > 1e-6){
+      student[key] = normalized;
+      changes.push(`${cfg.label} ${formatStatValue(beforeVal)} → ${formatStatValue(normalized)}`);
+    }
+  });
+
+  if(changes.length > 0){
+    const summary = changes.join('，');
+    try{ log(`调整 ${student.name}：${summary}`); }catch(e){ console.warn('student edit log failed', e); }
+    try{ pushEvent({ name: '学生资料更新', description: summary, week: currWeek() }); }catch(e){}
+  }
+
+  closeModal();
+  renderAll();
+  try{ if(typeof saveGame === 'function') saveGame(true); }catch(e){}
+  return true;
+}
+
+function openStudentEditModal(idx){
+  if(!game || !Array.isArray(game.students)) return;
+  const student = game.students[idx];
+  if(!student) return;
+
+  const aliasList = getStudentAliasList(student);
+  const aliasHtml = aliasList.length ? aliasList.map(name => `<span class="alias-chip">${htmlEscape(name)}</span>`).join('') : '<span class="muted">暂无历史姓名</span>';
+
+  const sectionsHtml = STUDENT_FIELD_GROUPS.map(group => {
+    const fields = Object.entries(STUDENT_FIELD_CONFIG).filter(([, cfg]) => cfg.category === group.key);
+    if(fields.length === 0) return '';
+    const grid = fields.map(([key, cfg]) => {
+      const current = Number(student[key] ?? 0);
+      const displayValue = cfg.step < 1 ? current.toFixed(1) : formatStatValue(current);
+      return `<div class="student-edit-field">
+        <label for="student-edit-${key}">${cfg.label}</label>
+        <input id="student-edit-${key}" type="number" min="${cfg.min}" max="${cfg.max}" step="${cfg.step}" value="${displayValue}" inputmode="decimal" />
+      </div>`;
+    }).join('');
+    return `<div class="student-edit-section">
+      <div class="student-edit-section-title">${group.title}</div>
+      <div class="student-edit-grid">${grid}</div>
+    </div>`;
+  }).join('');
+
+  const html = `
+    <div class="student-edit-modal" data-idx="${idx}">
+      <h3>编辑学生资料</h3>
+      <div class="small muted" style="margin-bottom:12px">调整学生基础能力、知识掌握与压力值，保持训练计划灵活可控。</div>
+      <label class="block" for="student-edit-name">姓名</label>
+      <input id="student-edit-name" type="text" maxlength="12" value="${htmlEscape(student.name)}" placeholder="请输入学生姓名" />
+      <div id="student-edit-name-error" class="form-error" aria-live="assertive"></div>
+      <div class="student-edit-note">历史姓名：${aliasHtml}</div>
+      ${sectionsHtml}
+      <div class="modal-actions" style="margin-top:16px">
+        <button class="btn btn-ghost" id="student-edit-cancel">取消</button>
+        <button class="btn" id="student-edit-save">保存修改</button>
+      </div>
+    </div>`;
+
+  showModal(html);
+
+  const modal = document.querySelector('.student-edit-modal');
+  if(!modal) return;
+
+  const nameInput = modal.querySelector('#student-edit-name');
+  const nameError = modal.querySelector('#student-edit-name-error');
+  const cancelBtn = document.getElementById('student-edit-cancel');
+  const saveBtn = document.getElementById('student-edit-save');
+
+  const showNameError = (msg) => {
+    if(!nameError) return;
+    nameError.textContent = msg || '';
+    nameError.style.visibility = msg ? 'visible' : 'hidden';
+  };
+
+  if(nameInput){
+    nameInput.focus();
+    try{ nameInput.select(); }catch(e){}
+    nameInput.addEventListener('input', () => showNameError(''));
+  }
+
+  if(cancelBtn){
+    cancelBtn.onclick = () => { closeModal(); };
+  }
+
+  if(saveBtn){
+    saveBtn.onclick = () => {
+      showNameError('');
+      const updates = collectStudentEdits(student, modal);
+      applyStudentEdits(idx, updates, {
+        onRenameError: (reason) => {
+          const message = mapRenameError(reason);
+          showNameError(message);
+          if(nameInput) nameInput.focus();
+        }
+      });
+    };
+  }
+}
+
+if(typeof window !== 'undefined'){
+  window.openStudentEditModal = openStudentEditModal;
+}
+
 function renderEventCards(){
   const container = $('event-cards-container');
   if(!container) return;
-  
+
   // 清空并重建结构
   container.innerHTML = '';
-  
-  if(recentEvents.length === 0){
+
+  const nowWeek = currWeek();
+  const eventsForDisplay = eventFeed && typeof eventFeed.getVisibleEvents === 'function'
+    ? eventFeed.getVisibleEvents(nowWeek, 2)
+    : [];
+
+  if(eventsForDisplay.length === 0){
     container.classList.remove('has-overflow');
     return;
   }
@@ -151,15 +409,12 @@ function renderEventCards(){
   wrapper.id = 'event-cards-wrapper';
   container.appendChild(wrapper);
 
-  const nowWeek = currWeek();
   let shown = 0;
-  
-  for(let i = 0; i < recentEvents.length; i++){
-    const ev = recentEvents[i];
-    if(ev.week && (nowWeek - ev.week) > 2) continue;
-    
-    if(ev._isHandled) continue;
-    
+
+  for(let i = 0; i < eventsForDisplay.length; i++){
+    const ev = eventsForDisplay[i];
+    if(!ev) continue;
+
     const card = document.createElement('div');
     let cardClass = 'event-card event-active';
     if (ev.options && ev.options.length > 0) {
@@ -210,6 +465,14 @@ function renderEventCards(){
   setTimeout(() => {
     checkEventCardsOverflow();
   }, 100);
+}
+
+if(eventFeed && typeof eventFeed.setOnChange === 'function'){
+  eventFeed.setOnChange(() => {
+    try{
+      renderEventCards();
+    }catch(e){ console.error('renderEventCards refresh error', e); }
+  });
 }
 
 // 检查事件卡片是否溢出并添加相应的视觉提示
@@ -374,11 +637,12 @@ function renderAll(){
     if(el) el.innerText = displayEls[id];
   }
   let out = '';
-  for(let s of game.students){
-    if(s && s.active === false) continue;
+  for(let idx = 0; idx < game.students.length; idx++){
+    const s = game.students[idx];
+    if(!s || s.active === false) continue;
     let pressureLevel = s.pressure < 35 ? "低" : s.pressure < 65 ? "中" : "高";
     let pressureClass = s.pressure < 35 ? "pressure-low" : s.pressure < 65 ? "pressure-mid" : "pressure-high";
-    
+
     // 检查是否有退队倾向
     let hasTendency = (s.quit_tendency_weeks && s.quit_tendency_weeks > 0);
     
@@ -397,9 +661,9 @@ function renderAll(){
       }).join('');
     }
     
-    out += `<div class="student-box">
-      <button class="evict-btn" data-idx="${game.students.indexOf(s)}" title="劝退">劝退</button>
-      
+    out += `<div class="student-box" data-idx="${idx}">
+      <button class="evict-btn" data-idx="${idx}" title="劝退">劝退</button>
+
       <div class="student-header">
         <div class="student-name">
           ${s.name}
@@ -408,6 +672,7 @@ function renderAll(){
           ${qualificationInfo.html}
         </div>
         <div class="student-status">
+          <button class="student-edit-btn" data-idx="${idx}" title="编辑学生资料">编辑</button>
           <span class="label-pill ${pressureClass}">压力: ${pressureLevel}</span>
         </div>
       </div>
@@ -449,6 +714,13 @@ function renderAll(){
       if(game.reputation < EVICT_REPUTATION_COST){ alert('声誉不足，无法劝退'); return; }
       if(!confirm(`确认劝退 ${game.students[idx].name}？将消耗声誉 ${EVICT_REPUTATION_COST}`)) return;
       evictSingle(idx);
+    };
+  });
+  document.querySelectorAll('#student-list .student-edit-btn').forEach(btn => {
+    btn.onclick = () => {
+      const idx = parseInt(btn.dataset.idx, 10);
+      if(isNaN(idx)) return;
+      openStudentEditModal(idx);
     };
   });
   renderEventCards();

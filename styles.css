@@ -161,7 +161,7 @@ footer{margin-top:16px;text-align:center;color:var(--muted)}
 .student-box .student-status {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   flex-shrink: 0;
 }
 
@@ -198,6 +198,25 @@ footer{margin-top:16px;text-align:center;color:var(--muted)}
   color: #c62828 !important; /* 红色文字 */
   padding: 0 4px !important;
 }
+.student-edit-btn {
+  padding: 4px 10px;
+  border: 1px solid #cbd5e0;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.9);
+  color: #2b6cb0;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.student-edit-btn:hover {
+  background: rgba(43,108,176,0.08);
+  border-color: rgba(43,108,176,0.35);
+}
+.student-edit-btn:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(43,108,176,0.25);
+}
 
 .label-pill.pressure-tendency {
   background: #fff5f5 !important;
@@ -205,6 +224,81 @@ footer{margin-top:16px;text-align:center;color:var(--muted)}
   color: #e53e3e !important; /* 深红色文字 */
   padding: 2px 6px !important;
   font-weight: 700 !important;
+}
+.student-edit-modal {
+  max-width: 560px;
+}
+.student-edit-modal h3 {
+  margin-top: 0;
+}
+.student-edit-note {
+  margin: 12px 0;
+  background: #f7fafc;
+  border: 1px solid #e2e8f0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  color: #4a5568;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.alias-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #e6f0ff;
+  color: #2b6cb0;
+  font-weight: 600;
+  font-size: 12px;
+  border: 1px solid rgba(43,108,176,0.18);
+}
+.student-edit-section {
+  margin-top: 16px;
+}
+.student-edit-section-title {
+  font-weight: 600;
+  color: #2d3748;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+.student-edit-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+}
+.student-edit-field label {
+  display: block;
+  font-size: 12px;
+  color: #4a5568;
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+.student-edit-field input {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid #cbd5e0;
+  border-radius: 6px;
+  font-size: 13px;
+  box-sizing: border-box;
+  transition: border 0.2s ease, box-shadow 0.2s ease;
+}
+.student-edit-field input:focus {
+  border-color: #3182ce;
+  box-shadow: 0 0 0 2px rgba(49,130,206,0.15);
+  outline: none;
+}
+.form-error {
+  color: #c53030;
+  font-size: 12px;
+  min-height: 16px;
+  margin-top: 4px;
+  visibility: hidden;
+}
+.form-error:not(:empty) {
+  visibility: visible;
 }
 
 /* 生病状态警告 */
