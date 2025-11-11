@@ -13,34 +13,53 @@ let game = window.game;
 
 const currWeek = () => (game?.week) || 0;
 
-// 将事件推入突发事件卡片（并保留日志）
-const recentEvents = [];
-// 为每个事件生成唯一ID的计数器
-let _eventIdCounter = 0;
+const eventFeed = (function(){
+  try{
+    if(typeof window !== 'undefined' && window.eventFeed){ return window.eventFeed; }
+    if(typeof globalThis !== 'undefined' && globalThis.eventFeed){ return globalThis.eventFeed; }
+  }catch(e){ /* ignore */ }
+  try{
+    const feed = new EventFeed();
+    if(typeof window !== 'undefined'){ window.eventFeed = feed; }
+    else if(typeof globalThis !== 'undefined'){ globalThis.eventFeed = feed; }
+    return feed;
+  }catch(e){
+    return null;
+  }
+})();
 
 function pushEvent(msg){
   const wkDefault = currWeek();
-  const ev = (typeof msg === 'string') 
-    ? { name: null, description: msg, week: wkDefault }
-    : { 
-        name: msg.name || null, 
-        description: msg.description || msg.text || '', 
-        week: msg.week || wkDefault,
-        options: msg.options || null,  // 支持选项
-        eventId: msg.eventId || null   // 用于区分同一事件的不同实例
-      };
+  let ev = null;
 
-  // 为每个事件分配唯一的内部ID
-  ev._uid = ++_eventIdCounter;
-
-  log(`${ev.name ? ev.name + '：' : ''}${ev.description}`);
-  
-  const key = `${ev.week}::${ev.name||''}::${ev.description||''}::${ev.eventId||''}`;
-  if(!recentEvents.some(r => `${r.week}::${r.name||''}::${r.description||''}::${r.eventId||''}` === key)){
-    recentEvents.unshift(ev);
-    if(recentEvents.length > 24) recentEvents.pop();
+  if(eventFeed && typeof eventFeed.add === 'function'){
+    ev = eventFeed.add(msg, wkDefault);
+  } else {
+    ev = (typeof msg === 'string')
+      ? { name: null, description: msg, week: wkDefault }
+      : {
+          name: msg.name || null,
+          description: msg.description || msg.text || '',
+          week: msg.week || wkDefault,
+          options: msg.options || null,
+          eventId: msg.eventId || null
+        };
   }
-  renderEventCards();
+
+  if(!ev) return;
+
+  if(typeof ev._uid !== 'number'){ ev._uid = Date.now(); }
+
+  try{
+    log(`${ev.name ? ev.name + '：' : ''}${ev.description}`);
+  }catch(e){ /* ignore log failure */ }
+
+  try{
+    const skipManualRender = eventFeed && typeof eventFeed.hasListener === 'function' && eventFeed.hasListener();
+    if(!skipManualRender && typeof window !== 'undefined' && typeof window.renderEventCards === 'function'){
+      window.renderEventCards();
+    }
+  }catch(e){ /* ignore render failure */ }
 }
 
 // 弱化人数影响的缩放函数
@@ -129,7 +148,10 @@ window.__summarizeSnapshot = __summarizeSnapshot;
 
 function hasPendingRequiredEvents(){
   try{
-    return recentEvents.some(ev => ev && ev.options && ev.options.length > 0 && !ev._isHandled);
+    if(eventFeed && typeof eventFeed.hasPendingRequired === 'function'){
+      return eventFeed.hasPendingRequired();
+    }
+    return false;
   }catch(e){ return false; }
 }
 
@@ -142,10 +164,16 @@ function handleEventChoice(event) {
 
   if (isNaN(eventUid) || isNaN(optionIndex)) return;
 
-  const targetEvent = recentEvents.find(e => e._uid === eventUid);
+  const targetEvent = eventFeed && typeof eventFeed.getByUid === 'function'
+    ? eventFeed.getByUid(eventUid)
+    : null;
   if (!targetEvent || targetEvent._isHandled) return;
 
-  targetEvent._isHandled = true;
+  if(eventFeed && typeof eventFeed.markHandled === 'function'){
+    eventFeed.markHandled(eventUid);
+  } else {
+    targetEvent._isHandled = true;
+  }
 
   const card = button.closest('.event-card');
   if (card) {
@@ -170,7 +198,12 @@ function handleEventChoice(event) {
     }
   } catch (err) {}
 
-  renderEventCards();
+  try{
+    const skipManualRender = eventFeed && typeof eventFeed.hasListener === 'function' && eventFeed.hasListener();
+    if(!skipManualRender && typeof window !== 'undefined' && typeof window.renderEventCards === 'function'){
+      window.renderEventCards();
+    }
+  }catch(e){ /* ignore */ }
   safeRenderAll();
 }
 

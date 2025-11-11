@@ -101,6 +101,17 @@ const QUOTES = [
 /* =========== UI 辅助 =========== */
 const $ = id => document.getElementById(id);
 
+const eventFeed = (function(){
+  try{
+    if(typeof window !== 'undefined' && window.eventFeed){ return window.eventFeed; }
+  }catch(e){ /* ignore */ }
+  try{
+    const feed = new EventFeed();
+    if(typeof window !== 'undefined'){ window.eventFeed = feed; }
+    return feed;
+  }catch(e){ return null; }
+})();
+
 function log(msg){
   const el = $('log');
   const wk = currWeek();
@@ -137,11 +148,16 @@ function safeRenderAll(){
 function renderEventCards(){
   const container = $('event-cards-container');
   if(!container) return;
-  
+
   // 清空并重建结构
   container.innerHTML = '';
-  
-  if(recentEvents.length === 0){
+
+  const nowWeek = currWeek();
+  const eventsForDisplay = eventFeed && typeof eventFeed.getVisibleEvents === 'function'
+    ? eventFeed.getVisibleEvents(nowWeek, 2)
+    : [];
+
+  if(eventsForDisplay.length === 0){
     container.classList.remove('has-overflow');
     return;
   }
@@ -151,15 +167,12 @@ function renderEventCards(){
   wrapper.id = 'event-cards-wrapper';
   container.appendChild(wrapper);
 
-  const nowWeek = currWeek();
   let shown = 0;
-  
-  for(let i = 0; i < recentEvents.length; i++){
-    const ev = recentEvents[i];
-    if(ev.week && (nowWeek - ev.week) > 2) continue;
-    
-    if(ev._isHandled) continue;
-    
+
+  for(let i = 0; i < eventsForDisplay.length; i++){
+    const ev = eventsForDisplay[i];
+    if(!ev) continue;
+
     const card = document.createElement('div');
     let cardClass = 'event-card event-active';
     if (ev.options && ev.options.length > 0) {
@@ -210,6 +223,14 @@ function renderEventCards(){
   setTimeout(() => {
     checkEventCardsOverflow();
   }, 100);
+}
+
+if(eventFeed && typeof eventFeed.setOnChange === 'function'){
+  eventFeed.setOnChange(() => {
+    try{
+      renderEventCards();
+    }catch(e){ console.error('renderEventCards refresh error', e); }
+  });
 }
 
 // 检查事件卡片是否溢出并添加相应的视觉提示

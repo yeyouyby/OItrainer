@@ -80,6 +80,25 @@ const mockCompetitions = [
   { name: 'CSP-S1', week: 15, numProblems: 4, maxScore: 400 }
 ];
 
+// 引入事件流（在 Node 环境下使用 require, 浏览器环境依赖预先加载的脚本）
+try {
+  if (typeof require === 'function') {
+    require('./lib/event-feed.js');
+  }
+} catch (e) {
+  // ignore — 浏览器环境无需 require
+}
+
+const eventFeed = (function(){
+  if (typeof window !== 'undefined' && window.eventFeed) return window.eventFeed;
+  if (typeof EventFeed !== 'undefined') {
+    const feed = new EventFeed();
+    if (typeof window !== 'undefined') window.eventFeed = feed;
+    return feed;
+  }
+  return null;
+})();
+
 // 测试函数：模拟比赛周触发选择事件后点击按钮
 function testCompetitionWeekEventChoice() {
   console.log('\n========== 测试：比赛周触发事件后按钮点击刷新 ==========\n');
@@ -89,24 +108,30 @@ function testCompetitionWeekEventChoice() {
   game.week = 15; // 设置为比赛周
   window.game = game;
   
-  const recentEvents = [];
+  if(eventFeed && typeof eventFeed.clear === 'function'){
+    eventFeed.clear();
+  }
   let renderAllCallCount = 0;
   let renderEventCardsCallCount = 0;
-  
+
   // 模拟 pushEvent
   window.pushEvent = function(evt) {
-    const ev = (typeof evt === 'string') 
-      ? { name: null, description: evt, week: game.week }
-      : { 
-          name: evt.name || null, 
-          description: evt.description || evt.text || '', 
-          week: evt.week || game.week,
-          options: evt.options || null,
-          eventId: evt.eventId || null
-        };
-    recentEvents.unshift(ev);
+    let ev = null;
+    if(eventFeed && typeof eventFeed.add === 'function'){
+      ev = eventFeed.add(evt, game.week);
+    } else {
+      ev = (typeof evt === 'string')
+        ? { name: null, description: evt, week: game.week }
+        : {
+            name: evt.name || null,
+            description: evt.description || evt.text || '',
+            week: evt.week || game.week,
+            options: evt.options || null,
+            eventId: evt.eventId || null
+          };
+    }
     renderEventCardsCallCount++;
-    console.log(`[pushEvent] 事件已推送: ${ev.name || '无名事件'} - ${ev.description}`);
+    console.log(`[pushEvent] 事件已推送: ${ev && ev.name ? ev.name : '无名事件'} - ${ev ? ev.description : ''}`);
   };
   
   // 模拟 renderAll
@@ -179,16 +204,25 @@ function testCompetitionWeekEventChoice() {
     eventId: 'test_choice_event'
   });
   
-  console.log(`  - 事件已推送到 recentEvents`);
-  console.log(`  - recentEvents 长度: ${recentEvents.length}`);
+  const snapshotAfterPush = (eventFeed && typeof eventFeed.getAll === 'function') ? eventFeed.getAll() : [];
+  console.log(`  - 事件已推送到事件流`);
+  console.log(`  - 事件数量: ${snapshotAfterPush.length}`);
   
   console.log('\n步骤 3: 设置 suppressEventModalOnce 标志（模拟比赛周状态）');
   game.suppressEventModalOnce = true;
   console.log(`  - suppressEventModalOnce: ${game.suppressEventModalOnce}`);
   
   console.log('\n步骤 4: 模拟点击"接受邀请"按钮');
-  const selectedEvent = recentEvents[0];
-  const selectedOption = selectedEvent.options[0];
+  const selectedEvent = snapshotAfterPush[0];
+  if(!selectedEvent){
+    console.log('❌ 失败: 未找到待处理的事件');
+    return false;
+  }
+  const selectedOption = (selectedEvent.options || [])[0];
+  if(!selectedOption){
+    console.log('❌ 失败: 事件缺少可用选项');
+    return false;
+  }
   
   console.log(`  - 点击前 suppressEventModalOnce: ${game.suppressEventModalOnce}`);
   console.log(`  - 点击前经费: ¥${game.budget}`);
@@ -219,7 +253,10 @@ function testCompetitionWeekEventChoice() {
   }
   
   // 移除选项
-  recentEvents[0].options = null;
+  const latestEvents = (eventFeed && typeof eventFeed.getAll === 'function') ? eventFeed.getAll() : [];
+  if(latestEvents[0]){
+    latestEvents[0].options = null;
+  }
   
   // 调用 renderAll
   window.renderAll();
@@ -228,7 +265,8 @@ function testCompetitionWeekEventChoice() {
   console.log(`  - 最终经费: ¥${game.budget} (预期: 95000)`);
   console.log(`  - renderAll 调用次数: ${renderAllCallCount} (预期: >= 1)`);
   console.log(`  - suppressEventModalOnce: ${game.suppressEventModalOnce} (预期: false)`);
-  console.log(`  - 事件选项已移除: ${recentEvents[0].options === null} (预期: true)`);
+  const verifyEvents = (eventFeed && typeof eventFeed.getAll === 'function') ? eventFeed.getAll() : [];
+  console.log(`  - 事件选项已移除: ${verifyEvents[0] ? verifyEvents[0].options === null : false} (预期: true)`);
   
   // 验证测试结果
   console.log('\n========== 测试结果 ==========');
@@ -249,7 +287,7 @@ function testCompetitionWeekEventChoice() {
     passed = false;
   }
   
-  if (recentEvents[0].options !== null) {
+  if (!verifyEvents[0] || verifyEvents[0].options !== null) {
     console.log('❌ 失败: 事件选项未被移除');
     passed = false;
   }
