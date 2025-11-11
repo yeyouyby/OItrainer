@@ -42,6 +42,7 @@
     <script src="lib/competitions.js"></script>
     <script src="lib/contest-ui.js"></script>
     <script src="lib/contest-integration.js"></script>
+    <script src="lib/event-feed.js"></script>
     <script src="game.js"></script>
 <script src="render.js"></script>
 <script src="debug.js"></script>
@@ -59,7 +60,17 @@
 
       function appendOut(txt){ const d = document.createElement('div'); d.innerText = txt; document.getElementById('outputs').prepend(d); }
 
-      document.getElementById('btn-clear-events').addEventListener('click', ()=>{ recentEvents.splice(0); renderEventCards(); appendOut('已清空事件卡片'); });
+      document.getElementById('btn-clear-events').addEventListener('click', ()=>{
+        try{
+          if(window.eventFeed && typeof window.eventFeed.clear === 'function'){
+            window.eventFeed.clear();
+          } else if(window.eventFeed && Array.isArray(window.eventFeed.events)){
+            window.eventFeed.events.splice(0);
+          }
+        }catch(e){ console.warn('清空事件卡片失败', e); }
+        try{ renderEventCards(); }catch(e){ console.warn('渲染事件卡片失败', e); }
+        appendOut('已清空事件卡片');
+      });
 
       <!-- 已移除：测试选择事件（用于开发验证）的按钮与处理逻辑 -->
 

@@ -45,4 +45,3 @@
 
 ---
 
-作者 @Dreamers-seve · 洛谷: https://www.luogu.com.cn/user/668972 · GitHub: https://github.com/Dreamersseve/OItrainer
