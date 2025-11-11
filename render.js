@@ -101,15 +101,6 @@ const QUOTES = [
 /* =========== UI 辅助 =========== */
 const $ = id => document.getElementById(id);
 
-const htmlEscape = (value) => {
-  return String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-};
-
 const eventFeed = (function(){
   try{
     if(typeof window !== 'undefined' && window.eventFeed){ return window.eventFeed; }
@@ -120,66 +111,6 @@ const eventFeed = (function(){
     return feed;
   }catch(e){ return null; }
 })();
-
-const STUDENT_FIELD_CONFIG = {
-  thinking: { label: '思维', min: 0, max: 600, step: 1, category: 'ability' },
-  coding: { label: '编程', min: 0, max: 600, step: 1, category: 'ability' },
-  mental: { label: '心理', min: 0, max: 150, step: 0.5, category: 'ability' },
-  knowledge_ds: { label: '数据结构', min: 0, max: 500, step: 1, category: 'knowledge' },
-  knowledge_graph: { label: '图论', min: 0, max: 500, step: 1, category: 'knowledge' },
-  knowledge_string: { label: '字符串', min: 0, max: 500, step: 1, category: 'knowledge' },
-  knowledge_math: { label: '数学', min: 0, max: 500, step: 1, category: 'knowledge' },
-  knowledge_dp: { label: 'DP', min: 0, max: 500, step: 1, category: 'knowledge' },
-  pressure: { label: '压力', min: 0, max: 120, step: 1, category: 'status' }
-};
-
-const STUDENT_FIELD_GROUPS = [
-  { key: 'ability', title: '基础能力' },
-  { key: 'knowledge', title: '知识掌握' },
-  { key: 'status', title: '状态参数' }
-];
-
-const formatStatValue = (value) => {
-  if(typeof value !== 'number' || !isFinite(value)) return String(value ?? '');
-  if(Math.abs(value - Math.round(value)) < 0.01) return String(Math.round(value));
-  return value.toFixed(1);
-};
-
-const clampValue = (val, min, max) => {
-  if(typeof clamp === 'function') return clamp(val, min, max);
-  if(val < min) return min;
-  if(val > max) return max;
-  return val;
-};
-
-const toNumberOr = (raw, fallback) => {
-  if(raw === '' || raw === null || typeof raw === 'undefined') return fallback;
-  const num = Number(raw);
-  return Number.isFinite(num) ? num : fallback;
-};
-
-const getStudentAliasList = (student) => {
-  const aliases = new Set();
-  if(!student) return [];
-  const add = (name) => {
-    if(!name) return;
-    const trimmed = String(name).trim();
-    if(trimmed && trimmed !== student.name){
-      aliases.add(trimmed);
-    }
-  };
-  if(student.originalName) add(student.originalName);
-  if(student.aliases instanceof Set){
-    student.aliases.forEach(add);
-  } else if(Array.isArray(student.aliases)){
-    student.aliases.forEach(add);
-  } else if(student.aliases && typeof student.aliases === 'object'){
-    Object.keys(student.aliases).forEach(key => {
-      if(student.aliases[key]) add(key);
-    });
-  }
-  return Array.from(aliases);
-};
 
 function log(msg){
   const el = $('log');
