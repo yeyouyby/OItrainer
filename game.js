@@ -1392,11 +1392,26 @@ function silentLoad(){
 }
 
 function startFromStartPage(){
-  let diff = parseInt(document.getElementById('start-diff').value);
+  const diffInput = document.getElementById('start-diff');
+  const stuInput = document.getElementById('start-stu');
   let provBtn = document.querySelector('#start-prov-grid .prov-btn.selected');
-  let prov = provBtn ? parseInt(provBtn.dataset.val) : 1;
-  let count = clampInt(parseInt(document.getElementById('start-stu').value),3,10);
-  
+  if(!provBtn){
+    provBtn = document.querySelector('#start-prov-grid .prov-btn');
+  }
+
+  let diff = diffInput ? parseInt(diffInput.value, 10) : 2;
+  if(Number.isNaN(diff)) diff = 2;
+
+  let prov = provBtn ? parseInt(provBtn.dataset.val, 10) : 1;
+  if(Number.isNaN(prov)) prov = 1;
+
+  let count = stuInput ? clampInt(parseInt(stuInput.value, 10), 3, 10) : 5;
+  if(Number.isNaN(count)) count = 5;
+
+  if(!diffInput || !stuInput){
+    console.warn('开始页面字段未完全加载，已回退至默认配置');
+  }
+
   try {
     sessionStorage.setItem('oi_game_active_session', 'true');
   } catch(e) {
